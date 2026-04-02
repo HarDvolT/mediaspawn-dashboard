@@ -1,35 +1,39 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import ErrorBoundary from './components/ErrorBoundary'
-import PasswordGate from './components/PasswordGate'
+import PinGate from './components/Auth/PinGate'
+import RealtimeBanner from './components/RealtimeBanner'
 import Layout from './components/Layout'
 import Overview from './pages/Overview'
 import Analytics from './pages/Analytics'
 import AgentStatus from './pages/AgentStatus'
 import Pipelines from './pages/Pipelines'
 import StagedActions from './pages/StagedActions'
-import SpawnedAgents from './pages/SpawnedAgents'
+import AgentLogs from './pages/AgentLogs'
 import Memory from './pages/Memory'
 import Clients from './pages/Clients'
+import Settings from './pages/Settings'
 
 export default function App() {
   return (
     <ErrorBoundary>
-      <PasswordGate>
+      <RealtimeBanner />
+      <PinGate>
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Layout />}>
               <Route index element={<Overview />} />
               <Route path="analytics" element={<Analytics />} />
-              <Route path="agents" element={<AgentStatus />} />
-              <Route path="spawned" element={<SpawnedAgents />} />
+              <Route path="logs" element={<AgentLogs />} />
               <Route path="pipelines" element={<Pipelines />} />
-              <Route path="staged-actions" element={<StagedActions />} />
-              <Route path="memory" element={<Memory />} />
+              <Route path="approvals" element={<StagedActions />} />
               <Route path="clients" element={<Clients />} />
+              <Route path="memory" element={<Memory />} />
+              <Route path="settings" element={<Settings />} />
+              <Route path="agents" element={<AgentStatus />} />
             </Route>
           </Routes>
         </BrowserRouter>
-      </PasswordGate>
+      </PinGate>
     </ErrorBoundary>
   )
 }

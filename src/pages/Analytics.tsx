@@ -1,494 +1,348 @@
 import { useState, useEffect } from 'react'
-import {
-  DollarSign,
-  TrendingUp,
-  Clock,
-  Bot,
-  LineChart,
-  BarChart3,
-  PieChart,
-  Activity,
-} from 'lucide-react'
-import {
-  LineChart as RechartsLine,
-  Line,
-  BarChart,
-  Bar,
-  PieChart as RechartsPie,
-  Pie,
-  Cell,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from 'recharts'
 import { supabase } from '../lib/supabase'
+import { BarChart, Bar, LineChart, Line, PieChart, Pie, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell } from 'recharts'
+import { Calendar } from 'lucide-react'
 
-// Types
-interface AnalyticsStats {
-  revenueThisMonth: number
-  pipelineSuccessRate: number
-  avgPipelineDuration: number
-  tokenCost: number
-}
+const COLORS = ['#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e']
 
-interface RevenueData {
-  date: string
-  revenue: number
-}
-
-interface TokenCostByAgent {
-  agent_name: string
-  total_cost: number
-}
-
-interface PipelineStatus {
-  status: string
-  count: number
-}
-
-interface TasksPerDay {
-  date: string
-  tasks: number
-}
-
-const COLORS = ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899']
-
-// Loading Skeleton
-function SkeletonCard({ className = '' }: { className?: string }) {
-  return <div className={`bg-gray-700 animate-pulse rounded-xl ${className}`} />
-}
-
-// Stat Card Component
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  accentColor,
-}: {
-  icon: React.ComponentType<{ className?: string }>
-  label: string
-  value: string
-  accentColor: string
-}) {
-  return (
-    <div
-      className="bg-gray-800 rounded-xl p-6 relative overflow-hidden"
-      style={{ borderLeft: `4px solid ${accentColor}` }}
-    >
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-gray-400 text-sm">{label}</p>
-          <p className="text-white text-3xl font-bold mt-1">{value}</p>
-        </div>
-        <span style={{ color: accentColor }}>
-          <Icon className="w-8 h-8 opacity-50" />
-        </span>
-      </div>
-    </div>
-  )
-}
+type DateRangeOption = '7d' | '30d' | '90d'
 
 export default function Analytics() {
+  const [dateRange, setDateRange] = useState<DateRangeOption>('30d')
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [stats, setStats] = useState<AnalyticsStats>({
-    revenueThisMonth: 0,
-    pipelineSuccessRate: 0,
-    avgPipelineDuration: 0,
-    tokenCost: 0,
-  })
-  const [revenueData, setRevenueData] = useState<RevenueData[]>([])
-  const [tokenCostByAgent, setTokenCostByAgent] = useState<TokenCostByAgent[]>([])
-  const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus[]>([])
-  const [tasksPerDay, setTasksPerDay] = useState<TasksPerDay[]>([])
+  const [agentActivity, setAgentActivity] = useState<{ agent: string; tasks: number }[]>([])
+  const [tokenUsage, setTokenUsage] = useState<{ date: string; tokens: number }[]>([])
+  const [pipelineSuccess, setPipelineSuccess] = useState<{ name: string; value: number }[]>([])
+  const [tasksCompleted, setTasksCompleted] = useState<{ date: string; tasks: number }[]>([])
+  const [stagedByType, setStagedByType] = useState<{ name: string; value: number }[]>([])
+  const [revenueTrend, setRevenueTrend] = useState<{ month: string; revenue: number }[]>([])
+  const [clientsByStatus, setClientsByStatus] = useState<{ status: string; count: number }[]>([])
 
+  // Calculate date range
+  const getDateFilter = () => {
+    const now = new Date()
+    const days = dateRange === '7d' ? 7 : dateRange === '30d' ? 30 : 90
+    const start = new Date(now)
+    start.setDate(start.getDate() - days)
+    return start.toISOString()
+  }
+
+  // Fetch analytics data
   useEffect(() => {
-    async function fetchAnalytics() {
-      try {
-        setLoading(true)
+    const fetchData = async () => {
+      setLoading(true)
+      const startDate = getDateFilter()
 
-        // Fetch revenue this month
-        const revenueRes = await supabase.rpc('get_revenue_this_month')
-        const revenueThisMonth = revenueRes.data || 0
+      // Agent Activity
+      const { data: logs } = await supabase
+        .from('agent_logs')
+        .select('agent_name')
+        .gte('created_at', startDate)
+        .eq('event_type', 'task_complete')
 
-        // Fetch pipeline success rate
-        const totalPipelinesRes = await supabase
-          .from('pipeline_runs')
-          .select('id', { count: 'exact', head: true })
-        const completedPipelinesRes = await supabase
-          .from('pipeline_runs')
-          .select('id', { count: 'exact', head: true })
-          .eq('status', 'completed')
-
-        const totalPipelines = totalPipelinesRes.count || 0
-        const completedPipelines = completedPipelinesRes.count || 0
-        const pipelineSuccessRate =
-          totalPipelines > 0 ? Math.round((completedPipelines / totalPipelines) * 100) : 0
-
-        // Fetch average pipeline duration
-        const pipelinesForDuration = await supabase
-          .from('pipeline_runs')
-          .select('created_at, completed_at')
-          .not('completed_at', 'is', null)
-
-        let avgDuration = 0
-        if (pipelinesForDuration.data && pipelinesForDuration.data.length > 0) {
-          const durations = pipelinesForDuration.data.map((p) => {
-            const start = new Date(p.created_at).getTime()
-            const end = new Date(p.completed_at!).getTime()
-            return (end - start) / (1000 * 60) // minutes
-          })
-          avgDuration = Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
-        }
-
-        // Fetch token cost this month
-        const tokenRes = await supabase
-          .from('agent_logs')
-          .select('token_cost')
-          .gte('started_at', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString())
-
-        let tokenCost = 0
-        if (tokenRes.data) {
-          tokenCost = tokenRes.data.reduce((sum, log) => sum + (log.token_cost || 0), 0)
-        }
-
-        setStats({
-          revenueThisMonth,
-          pipelineSuccessRate,
-          avgPipelineDuration: avgDuration,
-          tokenCost,
+      if (logs) {
+        const activity: Record<string, number> = {}
+        logs.forEach(log => {
+          activity[log.agent_name] = (activity[log.agent_name] || 0) + 1
         })
-
-        // Fetch revenue over time (last 30 days)
-        const thirtyDaysAgo = new Date()
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-
-        const revenueOverTimeRes = await supabase
-          .from('pipeline_runs')
-          .select('created_at, revenue')
-          .gte('created_at', thirtyDaysAgo.toISOString())
-          .eq('status', 'completed')
-
-        // Group by date
-        const revenueByDate: Record<string, number> = {}
-        if (revenueOverTimeRes.data) {
-          revenueOverTimeRes.data.forEach((p) => {
-            const date = new Date(p.created_at).toISOString().split('T')[0]
-            revenueByDate[date] = (revenueByDate[date] || 0) + (p.revenue || 0)
-          })
-        }
-
-        const revenueArr: RevenueData[] = []
-        for (let i = 29; i >= 0; i--) {
-          const date = new Date()
-          date.setDate(date.getDate() - i)
-          const dateStr = date.toISOString().split('T')[0]
-          revenueArr.push({
-            date: dateStr.slice(5), // MM-DD format
-            revenue: revenueByDate[dateStr] || 0,
-          })
-        }
-        setRevenueData(revenueArr)
-
-        // Fetch token cost by agent
-        const tokenByAgentRes = await supabase
-          .from('agent_logs')
-          .select('agent_name, token_cost')
-          .gte('started_at', thirtyDaysAgo.toISOString())
-
-        const tokenByAgent: Record<string, number> = {}
-        if (tokenByAgentRes.data) {
-          tokenByAgentRes.data.forEach((log) => {
-            tokenByAgent[log.agent_name] =
-              (tokenByAgent[log.agent_name] || 0) + (log.token_cost || 0)
-          })
-        }
-
-        const tokenArr: TokenCostByAgent[] = Object.entries(tokenByAgent)
-          .map(([agent_name, total_cost]) => ({ agent_name, total_cost }))
-          .sort((a, b) => b.total_cost - a.total_cost)
-          .slice(0, 10)
-        setTokenCostByAgent(tokenArr)
-
-        // Fetch pipeline status distribution
-        const statusRes = await supabase
-          .from('pipeline_runs')
-          .select('status')
-
-        const statusCounts: Record<string, number> = {
-          running: 0,
-          completed: 0,
-          failed: 0,
-          blocked: 0,
-        }
-        if (statusRes.data) {
-          statusRes.data.forEach((p) => {
-            if (statusCounts[p.status] !== undefined) {
-              statusCounts[p.status]++
-            }
-          })
-        }
-
-        const statusArr: PipelineStatus[] = Object.entries(statusCounts)
-          .filter(([_, count]) => count > 0)
-          .map(([status, count]) => ({ status, count }))
-        setPipelineStatus(statusArr)
-
-        // Fetch tasks completed per day (last 14 days)
-        const fourteenDaysAgo = new Date()
-        fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
-
-        const tasksRes = await supabase
-          .from('agent_logs')
-          .select('started_at')
-          .gte('started_at', fourteenDaysAgo.toISOString())
-          .eq('status', 'completed')
-
-        const tasksByDate: Record<string, number> = {}
-        if (tasksRes.data) {
-          tasksRes.data.forEach((log) => {
-            const date = new Date(log.started_at).toISOString().split('T')[0]
-            tasksByDate[date] = (tasksByDate[date] || 0) + 1
-          })
-        }
-
-        const tasksArr: TasksPerDay[] = []
-        for (let i = 13; i >= 0; i--) {
-          const date = new Date()
-          date.setDate(date.getDate() - i)
-          const dateStr = date.toISOString().split('T')[0]
-          tasksArr.push({
-            date: dateStr.slice(5),
-            tasks: tasksByDate[dateStr] || 0,
-          })
-        }
-        setTasksPerDay(tasksArr)
-
-        setError(null)
-      } catch (err) {
-        console.error('Failed to load analytics:', err)
-        setError('Failed to load analytics data')
-      } finally {
-        setLoading(false)
+        setAgentActivity(
+          Object.entries(activity)
+            .map(([agent, tasks]) => ({ agent, tasks }))
+            .sort((a, b) => b.tasks - a.tasks)
+            .slice(0, 10)
+        )
       }
+
+      // Token Usage (daily)
+      const { data: tokenLogs } = await supabase
+        .from('agent_logs')
+        .select('created_at, tokens_used')
+        .gte('created_at', startDate)
+        .not('tokens_used', 'is', null)
+
+      if (tokenLogs) {
+        const dailyTokens: Record<string, number> = {}
+        tokenLogs.forEach(log => {
+          if (log.tokens_used) {
+            const date = new Date(log.created_at).toISOString().split('T')[0]
+            dailyTokens[date] = (dailyTokens[date] || 0) + log.tokens_used
+          }
+        })
+        setTokenUsage(
+          Object.entries(dailyTokens)
+            .map(([date, tokens]) => ({ date: date.slice(5), tokens }))
+            .sort((a, b) => a.date.localeCompare(b.date))
+        )
+      }
+
+      // Pipeline Success
+      const { data: pipelines } = await supabase
+        .from('pipeline_runs')
+        .select('status')
+        .gte('created_at', startDate)
+
+      if (pipelines) {
+        const success = pipelines.filter(p => p.status === 'completed').length
+        const failed = pipelines.filter(p => p.status === 'failed').length
+        setPipelineSuccess([
+          { name: 'Completed', value: success },
+          { name: 'Failed', value: failed }
+        ])
+      }
+
+      // Tasks Completed (daily)
+      const { data: completedLogs } = await supabase
+        .from('agent_logs')
+        .select('created_at')
+        .gte('created_at', startDate)
+        .eq('event_type', 'task_complete')
+
+      if (completedLogs) {
+        const dailyTasks: Record<string, number> = {}
+        completedLogs.forEach(log => {
+          const date = new Date(log.created_at).toISOString().split('T')[0]
+          dailyTasks[date] = (dailyTasks[date] || 0) + 1
+        })
+        setTasksCompleted(
+          Object.entries(dailyTasks)
+            .map(([date, tasks]) => ({ date: date.slice(5), tasks }))
+            .sort((a, b) => a.date.localeCompare(b.date))
+        )
+      }
+
+      // Staged Actions by Type
+      const { data: staged } = await supabase
+        .from('staged_actions')
+        .select('action_type')
+        .gte('created_at', startDate)
+
+      if (staged) {
+        const typeCounts: Record<string, number> = {}
+        staged.forEach(s => {
+          typeCounts[s.action_type] = (typeCounts[s.action_type] || 0) + 1
+        })
+        setStagedByType(
+          Object.entries(typeCounts)
+            .map(([name, value]) => ({ name, value }))
+        )
+      }
+
+      // Revenue Trend (monthly)
+      const { data: invoices } = await supabase
+        .from('invoices')
+        .select('paid_at, amount')
+        .eq('status', 'paid')
+        .not('paid_at', 'is', null)
+        .order('paid_at', { ascending: true })
+        .limit(12)
+
+      if (invoices) {
+        const monthlyRevenue: Record<string, number> = {}
+        invoices.forEach(inv => {
+          if (inv.paid_at && inv.amount) {
+            const month = inv.paid_at.slice(0, 7)
+            monthlyRevenue[month] = (monthlyRevenue[month] || 0) + inv.amount
+          }
+        })
+        setRevenueTrend(
+          Object.entries(monthlyRevenue)
+            .map(([month, revenue]) => ({ month: month.slice(5) + '/' + month.slice(2, 4), revenue }))
+        )
+      }
+
+      // Clients by Status
+      const { data: clients } = await supabase
+        .from('clients')
+        .select('status')
+
+      if (clients) {
+        const statusCounts: Record<string, number> = {}
+        clients.forEach(c => {
+          statusCounts[c.status] = (statusCounts[c.status] || 0) + 1
+        })
+        setClientsByStatus(
+          Object.entries(statusCounts)
+            .map(([status, count]) => ({ status, count }))
+        )
+      }
+
+      setLoading(false)
     }
 
-    fetchAnalytics()
-  }, [])
+    fetchData()
+  }, [dateRange])
 
-  const formatCurrency = (value: number) => `$${value.toLocaleString()}`
-  const formatDuration = (minutes: number) => {
-    if (minutes < 60) return `${minutes}m`
-    const hours = Math.floor(minutes / 60)
-    const mins = minutes % 60
-    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
-  }
-  const formatTokens = (value: number) => {
-    if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`
-    if (value >= 1000) return `${(value / 1000).toFixed(1)}K`
-    return value.toString()
-  }
-
-  if (error) {
-    return (
-      <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-red-400">
-        {error}
-      </div>
-    )
+  const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: { value: number }[]; label?: string }) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="px-3 py-2 rounded-lg text-sm" style={{ background: '#1e2030', border: '1px solid #2e3040', color: '#fff' }}>
+          <p className="font-medium">{label}</p>
+          <p className="text-slate-400">{payload[0].value.toLocaleString()}</p>
+        </div>
+      )
+    }
+    return null
   }
 
   return (
     <div className="space-y-6">
-      {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {loading ? (
-          <>
-            <SkeletonCard className="h-24" />
-            <SkeletonCard className="h-24" />
-            <SkeletonCard className="h-24" />
-            <SkeletonCard className="h-24" />
-          </>
-        ) : (
-          <>
-            <StatCard
-              icon={DollarSign}
-              label="Revenue This Month"
-              value={formatCurrency(stats.revenueThisMonth)}
-              accentColor="#10b981"
-            />
-            <StatCard
-              icon={TrendingUp}
-              label="Pipeline Success Rate"
-              value={`${stats.pipelineSuccessRate}%`}
-              accentColor="#8b5cf6"
-            />
-            <StatCard
-              icon={Clock}
-              label="Avg Pipeline Duration"
-              value={formatDuration(stats.avgPipelineDuration)}
-              accentColor="#06b6d4"
-            />
-            <StatCard
-              icon={Bot}
-              label="Token Cost This Month"
-              value={formatTokens(stats.tokenCost)}
-              accentColor="#f59e0b"
-            />
-          </>
-        )}
-      </div>
-
-      {/* Charts Row 1 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Revenue Over Time */}
-        <div className="bg-gray-800 rounded-xl p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <LineChart className="w-5 h-5 text-violet-400" />
-            <h3 className="text-lg font-semibold text-white">Revenue Over Time</h3>
-          </div>
-          {loading ? (
-            <SkeletonCard className="h-64" />
-          ) : (
-            <ResponsiveContainer width="100%" height={280}>
-              <RechartsLine data={revenueData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
-                <YAxis stroke="#9ca3af" fontSize={12} tickFormatter={(v) => `$${v}`} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }}
-                  labelStyle={{ color: '#fff' }}
-                  formatter={(value) => [`$${value}`, 'Revenue']}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="revenue"
-                  stroke="#8b5cf6"
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 6, fill: '#8b5cf6' }}
-                />
-              </RechartsLine>
-            </ResponsiveContainer>
-          )}
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Analytics</h2>
+          <p className="text-slate-400 text-sm mt-1">
+            Overview of system performance and metrics
+          </p>
         </div>
 
-        {/* Token Cost by Agent */}
-        <div className="bg-gray-800 rounded-xl p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <BarChart3 className="w-5 h-5 text-amber-400" />
-            <h3 className="text-lg font-semibold text-white">Token Cost by Agent</h3>
+        {/* Date Range Selector */}
+        <div className="flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-slate-500" />
+          <div className="flex rounded-lg overflow-hidden" style={{ background: '#13141a' }}>
+            {(['7d', '30d', '90d'] as DateRangeOption[]).map(range => (
+              <button
+                key={range}
+                onClick={() => setDateRange(range)}
+                className={`px-4 py-2 text-sm font-medium transition-all ${dateRange === range ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-white'}`}
+              >
+                Last {range === '7d' ? '7' : range === '30d' ? '30' : '90'} days
+              </button>
+            ))}
           </div>
-          {loading ? (
-            <SkeletonCard className="h-64" />
-          ) : tokenCostByAgent.length === 0 ? (
-            <div className="h-64 flex items-center justify-center text-gray-500">
-              No token data available
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {[1, 2, 3, 4, 5, 6].map(i => (
+            <div key={i} className="animate-pulse rounded-xl p-6" style={{ background: '#13141a' }}>
+              <div className="h-4 bg-slate-700 rounded w-1/4 mb-4" />
+              <div className="h-48 bg-slate-700/50 rounded" />
             </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={tokenCostByAgent} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" horizontal={false} />
-                <XAxis type="number" stroke="#9ca3af" fontSize={12} tickFormatter={formatTokens} />
-                <YAxis
-                  type="category"
-                  dataKey="agent_name"
-                  stroke="#9ca3af"
-                  fontSize={11}
-                  width={80}
-                  tickFormatter={(v) => (v.length > 10 ? v.slice(0, 10) + '...' : v)}
-                />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }}
-                  labelStyle={{ color: '#fff' }}
-                  formatter={(value) => [`${value}`, 'Tokens']}
-                />
-                <Bar dataKey="total_cost" fill="#f59e0b" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
+          ))}
         </div>
-      </div>
-
-      {/* Charts Row 2 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pipeline Status Distribution */}
-        <div className="bg-gray-800 rounded-xl p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <PieChart className="w-5 h-5 text-emerald-400" />
-            <h3 className="text-lg font-semibold text-white">Pipeline Status Distribution</h3>
-          </div>
-          {loading ? (
-            <SkeletonCard className="h-64" />
-          ) : pipelineStatus.length === 0 ? (
-            <div className="h-64 flex items-center justify-center text-gray-500">
-              No pipeline data available
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Agent Activity */}
+          <div className="rounded-xl p-6" style={{ background: '#13141a', border: '1px solid #1e2030' }}>
+            <h3 className="text-sm font-medium text-slate-300 mb-4">Agent Activity</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={agentActivity} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e2030" />
+                  <XAxis type="number" stroke="#64748b" />
+                  <YAxis type="category" dataKey="agent" stroke="#64748b" width={80} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Bar dataKey="tasks" fill="#6366f1" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={280}>
-              <RechartsPie>
-                <Pie
-                  data={pipelineStatus}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={2}
-                  dataKey="count"
-                  nameKey="status"
-                  label={({ name, percent }) => `${name} (${((percent || 0) * 100).toFixed(0)}%)`}
-                  labelLine={false}
-                >
-                  {pipelineStatus.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }}
-                  labelStyle={{ color: '#fff' }}
-                />
-                <Legend />
-              </RechartsPie>
-            </ResponsiveContainer>
-          )}
-        </div>
-
-        {/* Tasks Completed Per Day */}
-        <div className="bg-gray-800 rounded-xl p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Activity className="w-5 h-5 text-cyan-400" />
-            <h3 className="text-lg font-semibold text-white">Tasks Completed Per Day</h3>
           </div>
-          {loading ? (
-            <SkeletonCard className="h-64" />
-          ) : (
-            <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={tasksPerDay}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
-                <YAxis stroke="#9ca3af" fontSize={12} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }}
-                  labelStyle={{ color: '#fff' }}
-                  formatter={(value) => [value, 'Tasks']}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="tasks"
-                  stroke="#06b6d4"
-                  fill="#06b6d4"
-                  fillOpacity={0.3}
-                  strokeWidth={2}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          )}
+
+          {/* Token Usage */}
+          <div className="rounded-xl p-6" style={{ background: '#13141a', border: '1px solid #1e2030' }}>
+            <h3 className="text-sm font-medium text-slate-300 mb-4">Token Usage (Daily)</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={tokenUsage}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e2030" />
+                  <XAxis dataKey="date" stroke="#64748b" />
+                  <YAxis stroke="#64748b" />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Line type="monotone" dataKey="tokens" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Pipeline Success */}
+          <div className="rounded-xl p-6" style={{ background: '#13141a', border: '1px solid #1e2030' }}>
+            <h3 className="text-sm font-medium text-slate-300 mb-4">Pipeline Success Rate</h3>
+            <div className="h-64 flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={pipelineSuccess} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                    <Cell fill="#3b82f6" />
+                    <Cell fill="#ef4444" />
+                  </Pie>
+                  <Tooltip />
+                  <Legend verticalAlign="bottom" height={36} formatter={(value) => <span className="text-slate-300">{value}</span>} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Tasks Completed */}
+          <div className="rounded-xl p-6" style={{ background: '#13141a', border: '1px solid #1e2030' }}>
+            <h3 className="text-sm font-medium text-slate-300 mb-4">Tasks Completed (Daily)</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={tasksCompleted}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e2030" />
+                  <XAxis dataKey="date" stroke="#64748b" />
+                  <YAxis stroke="#64748b" />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Area type="monotone" dataKey="tasks" stroke="#10b981" fill="#10b98120" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Staged Actions by Type */}
+          <div className="rounded-xl p-6" style={{ background: '#13141a', border: '1px solid #1e2030' }}>
+            <h3 className="text-sm font-medium text-slate-300 mb-4">Staged Actions by Type</h3>
+            <div className="h-64 flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={stagedByType} cx="50%" cy="50%" innerRadius={50} outerRadius={70} paddingAngle={3} dataKey="value">
+                    {stagedByType.map((_, index) => (
+                      <Cell key={index} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend verticalAlign="bottom" height={36} formatter={(value) => <span className="text-slate-300">{value}</span>} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Revenue Trend */}
+          <div className="rounded-xl p-6" style={{ background: '#13141a', border: '1px solid #1e2030' }}>
+            <h3 className="text-sm font-medium text-slate-300 mb-4">Revenue Trend (Monthly)</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={revenueTrend}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e2030" />
+                  <XAxis dataKey="month" stroke="#64748b" />
+                  <YAxis stroke="#64748b" />
+                  <Tooltip formatter={(value) => `$${Number(value).toLocaleString()}`} />
+                  <Line type="monotone" dataKey="revenue" stroke="#f59e0b" strokeWidth={2} dot={{ fill: '#f59e0b' }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Clients by Status - Full width */}
+          <div className="rounded-xl p-6 lg:col-span-2" style={{ background: '#13141a', border: '1px solid #1e2030' }}>
+            <h3 className="text-sm font-medium text-slate-300 mb-4">Clients by Status</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={clientsByStatus}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e2030" />
+                  <XAxis dataKey="status" stroke="#64748b" />
+                  <YAxis stroke="#64748b" />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                    {clientsByStatus.map((_, index) => (
+                      <Cell key={index} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
