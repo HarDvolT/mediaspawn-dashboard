@@ -8,6 +8,7 @@ const pageTitles: Record<string, string> = {
   '/pipelines': 'Pipelines',
   '/staged-actions': 'Staged Actions',
   '/memory': 'Memory',
+  '/clients': 'Clients',
 }
 
 export default function Layout() {
