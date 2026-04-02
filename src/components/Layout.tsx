@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
+import CommandBar from './CommandBar'
 
 const pageTitles: Record<string, string> = {
   '/': 'Overview',
@@ -20,6 +21,7 @@ export default function Layout() {
   const title = pageTitles[location.pathname] ?? 'Dashboard'
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
+  const [commandBarOpen, setCommandBarOpen] = useState(false)
 
   // Detect mobile screen
   useEffect(() => {
@@ -36,38 +38,46 @@ export default function Layout() {
     setSidebarOpen(false)
   }, [location.pathname])
 
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd/Ctrl + K to open command bar
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        setCommandBarOpen(true)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
   return (
     <div className="flex h-screen w-full overflow-hidden" style={{ background: '#0a0b0f' }}>
       {/* Mobile overlay */}
       {sidebarOpen && isMobile && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-sm"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar */}
-      <div 
-        className={`${
-          isMobile 
-            ? 'fixed inset-y-0 left-0 z-50 transform transition-transform duration-300' 
-            : ''
-        } ${sidebarOpen || !isMobile ? 'translate-x-0' : '-translate-x-full'}`}
-      >
+      <div className={`${
+        isMobile ? 'fixed inset-y-0 left-0 z-50 transform transition-transform duration-300' : ''
+      } ${sidebarOpen || !isMobile ? 'translate-x-0' : '-translate-x-full'}`}>
         <Sidebar isMobile={isMobile} onClose={() => setSidebarOpen(false)} />
       </div>
 
       {/* Main content */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-        <TopBar 
-          title={title} 
-          onMenuClick={() => setSidebarOpen(!sidebarOpen)} 
-          isMobile={isMobile} 
-        />
+        <TopBar title={title} onMenuClick={() => setSidebarOpen(!sidebarOpen)} isMobile={isMobile} />
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
           <Outlet />
         </main>
       </div>
+
+      {/* Command Bar */}
+      <CommandBar isOpen={commandBarOpen} onClose={() => setCommandBarOpen(false)} />
     </div>
   )
 }
