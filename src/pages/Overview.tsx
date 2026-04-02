@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useRealtime } from '../hooks/useRealtime'
+import LoopConfigPanel from '../components/LoopConfigPanel'
 
 // Types
 interface StatCards {
@@ -104,7 +105,6 @@ function StatCard({
 function AgentCard({ agent }: { agent: Agent }) {
   const typeBadgeStyle =
     agent.type === 'core' ? 'bg-gray-600 text-gray-200' : 'bg-violet-600 text-white'
-
   const statusStyles = {
     active: 'bg-violet-500/20 text-violet-400',
     idle: 'bg-gray-700 text-gray-400',
@@ -260,9 +260,18 @@ export default function Overview() {
         // Fetch stats
         const [activePipelinesRes, pendingApprovalsRes, agentsActiveRes, revenueRes] =
           await Promise.all([
-            supabase.from('pipeline_runs').select('id', { count: 'exact', head: true }).eq('status', 'running'),
-            supabase.from('staged_actions').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-            supabase.from('agent_registry').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+            supabase
+              .from('pipeline_runs')
+              .select('id', { count: 'exact', head: true })
+              .eq('status', 'running'),
+            supabase
+              .from('staged_actions')
+              .select('id', { count: 'exact', head: true })
+              .eq('status', 'pending'),
+            supabase
+              .from('agent_registry')
+              .select('id', { count: 'exact', head: true })
+              .eq('status', 'active'),
             supabase.rpc('get_revenue_this_month'),
           ])
 
@@ -323,14 +332,16 @@ export default function Overview() {
         setLoading(false)
       }
     }
-
     fetchData()
   }, [])
 
   // Realtime subscriptions
   useRealtime<Agent>('agent_registry', ({ eventType, new: newAgent, old }) => {
     setAgents((prev) => {
-      if (eventType === 'INSERT') return [...prev, newAgent].sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name))
+      if (eventType === 'INSERT')
+        return [...prev, newAgent].sort(
+          (a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name)
+        )
       if (eventType === 'UPDATE') return prev.map((a) => (a.id === newAgent.id ? newAgent : a))
       if (eventType === 'DELETE') return prev.filter((a) => a.id !== old.id)
       return prev
@@ -356,12 +367,16 @@ export default function Overview() {
   useRealtime<StagedAction>('staged_actions', ({ eventType, new: newAction, old }) => {
     setStagedActions((prev) => {
       if (eventType === 'INSERT' && newAction.status === 'pending') {
-        return [...prev, newAction].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()).slice(0, 5)
+        return [...prev, newAction]
+          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+          .slice(0, 5)
       }
       if (eventType === 'UPDATE') {
         const filtered = prev.filter((a) => a.id !== newAction.id)
         return newAction.status === 'pending'
-          ? [...filtered, newAction].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()).slice(0, 5)
+          ? [...filtered, newAction]
+              .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+              .slice(0, 5)
           : filtered
       }
       if (eventType === 'DELETE') return prev.filter((a) => a.id !== old.id)
@@ -471,26 +486,31 @@ export default function Overview() {
           )}
         </div>
 
-        {/* Right: Pending Approvals (40%) */}
-        <div className="lg:col-span-2">
-          <h2 className="text-lg font-semibold text-white mb-4">Pending Approvals</h2>
-          {loading ? (
-            <div className="space-y-2">
-              {[...Array(3)].map((_, i) => (
-                <SkeletonCard key={i} className="h-16" />
-              ))}
-            </div>
-          ) : stagedActions.length === 0 ? (
-            <div className="text-gray-500 text-center py-8 bg-gray-800/30 rounded-lg">
-              No pending approvals
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {stagedActions.map((action) => (
-                <StagedActionRow key={action.id} action={action} />
-              ))}
-            </div>
-          )}
+        {/* Right: Pending Approvals + Loop Config (40%) */}
+        <div className="lg:col-span-2 space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-white mb-4">Pending Approvals</h2>
+            {loading ? (
+              <div className="space-y-2">
+                {[...Array(3)].map((_, i) => (
+                  <SkeletonCard key={i} className="h-16" />
+                ))}
+              </div>
+            ) : stagedActions.length === 0 ? (
+              <div className="text-gray-500 text-center py-8 bg-gray-800/30 rounded-lg">
+                No pending approvals
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {stagedActions.map((action) => (
+                  <StagedActionRow key={action.id} action={action} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Loop Config Panel */}
+          <LoopConfigPanel />
         </div>
       </div>
 
