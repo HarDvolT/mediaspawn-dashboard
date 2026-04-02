@@ -4,9 +4,11 @@ import Header from './Header'
 
 const pageTitles: Record<string, string> = {
   '/': 'Overview',
+  '/analytics': 'Analytics',
   '/agents': 'Agent Status',
   '/pipelines': 'Pipelines',
   '/staged-actions': 'Staged Actions',
+  '/spawned': 'Spawned Agents',
   '/memory': 'Memory',
   '/clients': 'Clients',
 }
