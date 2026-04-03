@@ -93,7 +93,7 @@ export default function Memory() {
         const { data, error: fetchError } = await supabase
           .from('idle_work')
           .select('*')
-          .order('priority', { ascending: false })
+          // .order('priority', { ascending: false })
           .limit(30)
         if (fetchError) throw fetchError
         setIncubatorIdeas(data || [])
@@ -102,7 +102,7 @@ export default function Memory() {
           .from('todos')
           .select('*')
           .eq('status', 'pending')
-          .order('priority', { ascending: false })
+          // .order('priority', { ascending: false })
           .limit(30)
         if (fetchError) throw fetchError
         setTodos(data || [])
