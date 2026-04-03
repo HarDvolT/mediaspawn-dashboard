@@ -292,7 +292,7 @@ export default function Overview() {
         .from('pipeline_runs')
         .select('*')
         .in('status', ['running', 'blocked'])
-        .order('created_at', { ascending: false })
+        .order('started_at', { ascending: false })
         .limit(5)
       if (pipelinesError) throw pipelinesError
       setPipelines(pipelinesData || [])
@@ -302,7 +302,7 @@ export default function Overview() {
         .from('staged_actions')
         .select('*')
         .eq('status', 'pending')
-        .order('created_at', { ascending: true })
+        .order('started_at', { ascending: true })
         .limit(5)
       if (actionsError) throw actionsError
       setStagedActions(actionsData || [])
