@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { Mail, Users, TrendingUp, FileText, RefreshCw, Target, Eye, Share2 } from 'lucide-react';
+import { Mail, Users, TrendingUp, FileText, RefreshCw, Target, Eye, Share2, AlertCircle, Check } from 'lucide-react';
 
 interface AutomationConfig {
   id: string;
@@ -25,33 +25,96 @@ const features = [
 export default function Automation() {
   const [configs, setConfigs] = useState<AutomationConfig[]>([]);
   const [loading, setLoading] = useState(true);
+  const [togglingKey, setTogglingKey] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [successKey, setSuccessKey] = useState<string | null>(null);
+
+  const fetchConfigs = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('automation_config')
+        .select('*')
+        .order('feature_key');
+      
+      if (error) throw error;
+      if (data) setConfigs(data);
+      setError(null);
+    } catch (err) {
+      console.error('Failed to fetch automation configs:', err);
+      setError('Failed to load automation settings');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetchConfigs();
-  }, []);
-
-  async function fetchConfigs() {
-    const { data, error } = await supabase
-      .from('automation_config')
-      .select('*')
-      .order('feature_key');
     
-    if (!error && data) {
-      setConfigs(data);
-    }
-    setLoading(false);
-  }
+    // Poll every 30 seconds
+    const interval = setInterval(fetchConfigs, 30000);
+    return () => clearInterval(interval);
+  }, [fetchConfigs]);
 
   async function toggleFeature(key: string, enabled: boolean) {
-    const { error } = await supabase
-      .from('automation_config')
-      .update({ enabled, updated_at: new Date().toISOString() })
-      .eq('feature_key', key);
-    
-    if (!error) {
-      setConfigs(configs.map(c => 
-        c.feature_key === key ? { ...c, enabled } : c
-      ));
+    setTogglingKey(key);
+    setError(null);
+    setSuccessKey(null);
+
+    try {
+      // First check if config exists
+      const existingConfig = configs.find(c => c.feature_key === key);
+      
+      if (existingConfig) {
+        // Update existing config
+        const { error: updateError } = await supabase
+          .from('automation_config')
+          .update({ 
+            enabled, 
+            updated_at: new Date().toISOString() 
+          })
+          .eq('feature_key', key);
+
+        if (updateError) throw updateError;
+      } else {
+        // Insert new config
+        const { error: insertError } = await supabase
+          .from('automation_config')
+          .insert({
+            feature_key: key,
+            enabled,
+            config: {},
+          });
+
+        if (insertError) throw insertError;
+      }
+
+      // Update local state
+      setConfigs(prev => {
+        const existing = prev.find(c => c.feature_key === key);
+        if (existing) {
+          return prev.map(c => c.feature_key === key ? { ...c, enabled } : c);
+        } else {
+          return [...prev, {
+            id: key,
+            feature_key: key,
+            enabled,
+            config: {},
+            last_run: null,
+            next_run: null,
+          } as AutomationConfig];
+        }
+      });
+
+      // Show success indicator
+      setSuccessKey(key);
+      setTimeout(() => setSuccessKey(null), 2000);
+    } catch (err) {
+      console.error('Failed to toggle feature:', err);
+      setError(`Failed to update ${key}. Please try again.`);
+      // Refresh configs to ensure UI is in sync
+      fetchConfigs();
+    } finally {
+      setTogglingKey(null);
     }
   }
 
@@ -77,11 +140,27 @@ export default function Automation() {
         <p className="text-sm text-gray-500">Enable and configure autonomous agency operations</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      {/* Error Banner */}
+      {error && (
+        <div className="mb-4 bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-red-400 flex items-center gap-2">
+          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <span>{error}</span>
+          <button 
+            onClick={() => setError(null)}
+            className="ml-auto text-red-400 hover:text-red-300"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {features.map(feature => {
           const config = configs.find(c => c.feature_key === feature.key);
           const isEnabled = config?.enabled ?? false;
           const Icon = feature.icon;
+          const isToggling = togglingKey === feature.key;
+          const isSuccess = successKey === feature.key;
 
           return (
             <div
@@ -102,15 +181,29 @@ export default function Automation() {
                     <p className="text-xs text-gray-500">{feature.description}</p>
                   </div>
                 </div>
+                
                 <button
                   onClick={() => toggleFeature(feature.key, !isEnabled)}
-                  className={`relative w-12 h-6 rounded-full transition-colors ${
-                    isEnabled ? 'bg-violet-500' : 'bg-gray-700'
+                  disabled={isToggling}
+                  className={`relative w-12 h-6 rounded-full transition-all ${
+                    isToggling 
+                      ? 'opacity-50 cursor-wait' 
+                      : isEnabled 
+                        ? 'bg-violet-500' 
+                        : 'bg-gray-700'
                   }`}
                 >
-                  <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-                    isEnabled ? 'left-7' : 'left-1'
-                  }`} />
+                  {isSuccess ? (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <Check className="w-4 h-4 text-white" />
+                    </div>
+                  ) : (
+                    <div 
+                      className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                        isEnabled ? 'left-7' : 'left-1'
+                      }`} 
+                    />
+                  )}
                 </button>
               </div>
 
@@ -118,12 +211,17 @@ export default function Automation() {
                 <div className="mt-3 pt-3 border-t border-gray-800">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-gray-500">
-                      Last run: {config?.last_run ? new Date(config.last_run).toLocaleString() : 'Never'}
+                      Last run: {config?.last_run 
+                        ? new Date(config.last_run).toLocaleString() 
+                        : 'Never'
+                      }
                     </span>
                     <span className={`px-2 py-1 rounded-full text-xs ${
-                      isEnabled ? 'bg-green-500/20 text-green-400' : 'bg-gray-800 text-gray-500'
+                      isEnabled 
+                        ? 'bg-green-500/20 text-green-400' 
+                        : 'bg-gray-800 text-gray-500'
                     }`}>
-                      {isEnabled ? 'Active' : 'Inactive'}
+                      {isToggling ? 'Updating...' : 'Active'}
                     </span>
                   </div>
                 </div>

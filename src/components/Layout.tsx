@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Header from './Header'
 import CommandBar from './CommandBar'
+import ChatWidget from './ChatWidget'
 
 const pageTitles: Record<string, string> = {
   '/': 'Overview',
@@ -13,6 +14,7 @@ const pageTitles: Record<string, string> = {
   '/clients': 'Clients',
   '/analytics': 'Analytics',
   '/automation': 'Automation',
+  '/revenue': 'Revenue',
 }
 
 export default function Layout() {
@@ -42,6 +44,7 @@ export default function Layout() {
         </main>
       </div>
       <CommandBar isOpen={commandBarOpen} onClose={() => setCommandBarOpen(false)} />
+      <ChatWidget />
     </div>
   )
 }

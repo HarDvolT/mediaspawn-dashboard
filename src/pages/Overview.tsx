@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { formatDistanceToNow } from 'date-fns'
 import {
   GitBranch,
@@ -105,7 +105,6 @@ function StatCard({
 function AgentCard({ agent }: { agent: Agent }) {
   const typeBadgeStyle =
     agent.type === 'core' ? 'bg-gray-600 text-gray-200' : 'bg-violet-600 text-white'
-
   const statusStyles = {
     active: 'bg-violet-500/20 text-violet-400',
     idle: 'bg-gray-700 text-gray-400',
@@ -146,7 +145,6 @@ function PipelineRow({ pipeline }: { pipeline: PipelineRun }) {
     completed: 'bg-emerald-500',
     failed: 'bg-red-500',
   }
-
   const elapsed = formatDistanceToNow(new Date(pipeline.created_at), { addSuffix: false })
 
   return (
@@ -185,7 +183,6 @@ function StagedActionRow({ action }: { action: StagedAction }) {
     deployment: Zap,
     default: FileText,
   }
-
   const Icon = typeIcons[action.type] || typeIcons.default
   const timePending = formatDistanceToNow(new Date(action.created_at), { addSuffix: true })
 
@@ -211,7 +208,6 @@ function ActivityLogRow({ log }: { log: AgentLog }) {
     blocked: { color: 'text-amber-400', bg: 'bg-amber-500/20', icon: AlertTriangle },
     running: { color: 'text-violet-400', bg: 'bg-violet-500/20', icon: Activity },
   }
-
   const config = statusConfig[log.status]
   const duration = log.completed_at
     ? formatDistanceToNow(new Date(log.started_at), { addSuffix: false })
@@ -252,86 +248,103 @@ export default function Overview() {
   const [stagedActions, setStagedActions] = useState<StagedAction[]>([])
   const [agentLogs, setAgentLogs] = useState<AgentLog[]>([])
 
-  // Fetch all data on mount
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        setLoading(true)
+  // Fetch all data
+  const fetchData = useCallback(async (isInitialLoad = false) => {
+    try {
+      if (isInitialLoad) setLoading(true)
 
-        // Fetch stats
-        const [activePipelinesRes, pendingApprovalsRes, agentsActiveRes, revenueRes] =
-          await Promise.all([
-            supabase.from('pipeline_runs').select('id', { count: 'exact', head: true }).eq('status', 'running'),
-            supabase.from('staged_actions').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-            supabase.from('agent_registry').select('id', { count: 'exact', head: true }).eq('status', 'active'),
-            supabase.rpc('get_revenue_this_month'),
-          ])
+      // Fetch stats
+      const [activePipelinesRes, pendingApprovalsRes, agentsActiveRes, revenueRes] =
+        await Promise.all([
+          supabase
+            .from('pipeline_runs')
+            .select('id', { count: 'exact', head: true })
+            .eq('status', 'running'),
+          supabase
+            .from('staged_actions')
+            .select('id', { count: 'exact', head: true })
+            .eq('status', 'pending'),
+          supabase
+            .from('agent_registry')
+            .select('id', { count: 'exact', head: true })
+            .eq('status', 'active'),
+          supabase.rpc('get_revenue_this_month'),
+        ])
 
-        setStats({
-          activePipelines: activePipelinesRes.count || 0,
-          pendingApprovals: pendingApprovalsRes.count || 0,
-          agentsActive: agentsActiveRes.count || 0,
-          revenueThisMonth: revenueRes.data || 0,
-        })
+      setStats({
+        activePipelines: activePipelinesRes.count || 0,
+        pendingApprovals: pendingApprovalsRes.count || 0,
+        agentsActive: agentsActiveRes.count || 0,
+        revenueThisMonth: revenueRes.data || 0,
+      })
 
-        // Fetch agents
-        const { data: agentsData, error: agentsError } = await supabase
-          .from('agent_registry')
-          .select('*')
-          .order('type', { ascending: true })
-          .order('name', { ascending: true })
+      // Fetch agents
+      const { data: agentsData, error: agentsError } = await supabase
+        .from('agent_registry')
+        .select('*')
+        .order('type', { ascending: true })
+        .order('name', { ascending: true })
+      if (agentsError) throw agentsError
+      setAgents(agentsData || [])
 
-        if (agentsError) throw agentsError
-        setAgents(agentsData || [])
+      // Fetch pipelines
+      const { data: pipelinesData, error: pipelinesError } = await supabase
+        .from('pipeline_runs')
+        .select('*')
+        .in('status', ['running', 'blocked'])
+        .order('created_at', { ascending: false })
+        .limit(5)
+      if (pipelinesError) throw pipelinesError
+      setPipelines(pipelinesData || [])
 
-        // Fetch pipelines
-        const { data: pipelinesData, error: pipelinesError } = await supabase
-          .from('pipeline_runs')
-          .select('*')
-          .in('status', ['running', 'blocked'])
-          .order('created_at', { ascending: false })
-          .limit(5)
+      // Fetch staged actions
+      const { data: actionsData, error: actionsError } = await supabase
+        .from('staged_actions')
+        .select('*')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true })
+        .limit(5)
+      if (actionsError) throw actionsError
+      setStagedActions(actionsData || [])
 
-        if (pipelinesError) throw pipelinesError
-        setPipelines(pipelinesData || [])
+      // Fetch agent logs
+      const { data: logsData, error: logsError } = await supabase
+        .from('agent_logs')
+        .select('*')
+        .order('started_at', { ascending: false })
+        .limit(10)
+      if (logsError) throw logsError
+      setAgentLogs(logsData || [])
 
-        // Fetch staged actions
-        const { data: actionsData, error: actionsError } = await supabase
-          .from('staged_actions')
-          .select('*')
-          .eq('status', 'pending')
-          .order('created_at', { ascending: true })
-          .limit(5)
-
-        if (actionsError) throw actionsError
-        setStagedActions(actionsData || [])
-
-        // Fetch agent logs
-        const { data: logsData, error: logsError } = await supabase
-          .from('agent_logs')
-          .select('*')
-          .order('started_at', { ascending: false })
-          .limit(10)
-
-        if (logsError) throw logsError
-        setAgentLogs(logsData || [])
-
-        setError(null)
-      } catch (err) {
-        console.error('Failed to load data:', err)
-        setError('Failed to load data')
-      } finally {
-        setLoading(false)
-      }
+      setError(null)
+    } catch (err) {
+      console.error('Failed to load data:', err)
+      setError('Failed to load data')
+    } finally {
+      if (isInitialLoad) setLoading(false)
     }
-
-    fetchData()
   }, [])
+
+  // Initial fetch on mount
+  useEffect(() => {
+    fetchData(true)
+  }, [fetchData])
+
+  // Polling every 30 seconds for real-time updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchData(false)
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [fetchData])
 
   // Realtime subscriptions
   useRealtime<Agent>('agent_registry', ({ eventType, new: newAgent, old }) => {
     setAgents((prev) => {
-      if (eventType === 'INSERT') return [...prev, newAgent].sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name))
+      if (eventType === 'INSERT')
+        return [...prev, newAgent].sort(
+          (a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name)
+        )
       if (eventType === 'UPDATE') return prev.map((a) => (a.id === newAgent.id ? newAgent : a))
       if (eventType === 'DELETE') return prev.filter((a) => a.id !== old.id)
       return prev
@@ -357,12 +370,16 @@ export default function Overview() {
   useRealtime<StagedAction>('staged_actions', ({ eventType, new: newAction, old }) => {
     setStagedActions((prev) => {
       if (eventType === 'INSERT' && newAction.status === 'pending') {
-        return [...prev, newAction].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()).slice(0, 5)
+        return [...prev, newAction]
+          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+          .slice(0, 5)
       }
       if (eventType === 'UPDATE') {
         const filtered = prev.filter((a) => a.id !== newAction.id)
         return newAction.status === 'pending'
-          ? [...filtered, newAction].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()).slice(0, 5)
+          ? [...filtered, newAction]
+              .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+              .slice(0, 5)
           : filtered
       }
       if (eventType === 'DELETE') return prev.filter((a) => a.id !== old.id)
@@ -432,7 +449,7 @@ export default function Overview() {
       <QuickActions
         pendingApprovals={stats.pendingApprovals}
         onApproveAll={() => {
-          setStats(prev => ({ ...prev, pendingApprovals: 0 }))
+          setStats((prev) => ({ ...prev, pendingApprovals: 0 }))
           setStagedActions([])
         }}
       />
