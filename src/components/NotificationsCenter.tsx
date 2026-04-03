@@ -11,9 +11,9 @@ interface NotificationStats {
 interface AgentActivity {
   id: string
   agent_name: string
-  task: string
+  task_description: string
   status: string
-  created_at: string
+  started_at: string
 }
 
 export default function NotificationsCenter() {
@@ -45,7 +45,7 @@ export default function NotificationsCenter() {
         supabase.from('staged_actions').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
         supabase.from('input_requests').select('id', { count: 'exact', head: true }).eq('status', 'blocked'),
         supabase.from('pipeline_runs').select('id', { count: 'exact', head: true }).eq('status', 'running'),
-        supabase.from('agent_logs').select('id, agent_name, task, status, created_at').order('created_at', { ascending: false }).limit(5),
+        supabase.from('agent_logs').select('id, agent_name, task_description, status, started_at').order('started_at', { ascending: false }).limit(5),
       ])
 
       setStats({
@@ -180,7 +180,7 @@ export default function NotificationsCenter() {
                         }`} />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-gray-300 truncate">{activity.agent_name}</p>
-                          <p className="text-xs text-gray-500 truncate">{activity.task}</p>
+                          <p className="text-xs text-gray-500 truncate">{activity.task_description}</p>
                         </div>
                         <span className={`text-xs px-2 py-0.5 rounded-full ${
                           activity.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' :

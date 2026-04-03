@@ -43,7 +43,7 @@ interface PipelineRun {
   project_name: string
   client_name: string | null
   status: 'running' | 'blocked' | 'completed' | 'failed'
-  created_at: string
+  started_at: string
   progress: number
 }
 
@@ -145,7 +145,7 @@ function PipelineRow({ pipeline }: { pipeline: PipelineRun }) {
     completed: 'bg-emerald-500',
     failed: 'bg-red-500',
   }
-  const elapsed = formatDistanceToNow(new Date(pipeline.created_at), { addSuffix: false })
+  const elapsed = formatDistanceToNow(new Date(pipeline.started_at), { addSuffix: false })
 
   return (
     <div className="bg-gray-800/50 rounded-lg p-3 flex items-center gap-4">
