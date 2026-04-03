@@ -1,26 +1,315 @@
+import { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
+import { Database, Settings, Lightbulb, ListTodo, RefreshCw } from 'lucide-react'
+
+type TabId = 'memory' | 'loops' | 'incubator' | 'queue'
+
+interface Tab {
+  id: TabId
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+}
+
+const tabs: Tab[] = [
+  { id: 'memory', label: 'Memory Browser', icon: Database },
+  { id: 'loops', label: 'Loop Config', icon: Settings },
+  { id: 'incubator', label: 'Incubator Ideas', icon: Lightbulb },
+  { id: 'queue', label: 'Idle Work Queue', icon: ListTodo },
+]
+
+interface ConversationMemory {
+  id: string
+  agent_name: string
+  conversation_id: string
+  key: string
+  value: string
+  created_at: string
+  updated_at: string
+}
+
+interface LoopConfig {
+  id: string
+  agent_name: string
+  loop_type: string
+  config: Record<string, unknown>
+  enabled: boolean
+  created_at: string
+}
+
+interface IdleWork {
+  id: string
+  agent_name: string
+  work_type: string
+  description: string
+  priority: number
+  status: string
+  created_at: string
+}
+
+interface Todo {
+  id: string
+  agent_name: string
+  task: string
+  status: string
+  priority: number
+  created_at: string
+  due_date: string | null
+}
+
+function JsonDisplay({ data }: { data: unknown }) {
+  return (
+    <pre className="text-xs text-gray-300 bg-gray-900/50 p-2 rounded overflow-auto max-h-32">
+      {JSON.stringify(data, null, 2)}
+    </pre>
+  )
+}
+
 export default function Memory() {
+  const [activeTab, setActiveTab] = useState<TabId>('memory')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+
+  // Data states
+  const [memories, setMemories] = useState<ConversationMemory[]>([])
+  const [loopConfigs, setLoopConfigs] = useState<LoopConfig[]>([])
+  const [incubatorIdeas, setIncubatorIdeas] = useState<IdleWork[]>([])
+  const [todos, setTodos] = useState<Todo[]>([])
+
+  const fetchData = async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true)
+    else setLoading(true)
+    setError(null)
+
+    try {
+      if (activeTab === 'memory') {
+        const { data, error: fetchError } = await supabase
+          .from('conversation_memory')
+          .select('*')
+          .order('updated_at', { ascending: false })
+          .limit(50)
+        if (fetchError) throw fetchError
+        setMemories(data || [])
+      } else if (activeTab === 'loops') {
+        const { data, error: fetchError } = await supabase
+          .from('loop_config')
+          .select('*')
+          .order('agent_name', { ascending: true })
+        if (fetchError) throw fetchError
+        setLoopConfigs(data || [])
+      } else if (activeTab === 'incubator') {
+        const { data, error: fetchError } = await supabase
+          .from('idle_work')
+          .select('*')
+          .order('priority', { ascending: false })
+          .limit(30)
+        if (fetchError) throw fetchError
+        setIncubatorIdeas(data || [])
+      } else if (activeTab === 'queue') {
+        const { data, error: fetchError } = await supabase
+          .from('todos')
+          .select('*')
+          .eq('status', 'pending')
+          .order('priority', { ascending: false })
+          .limit(30)
+        if (fetchError) throw fetchError
+        setTodos(data || [])
+      }
+    } catch (err) {
+      console.error('Failed to fetch data:', err)
+      setError('Failed to load data. Table may not exist yet.')
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchData()
+  }, [activeTab])
+
+  const handleRefresh = () => {
+    fetchData(true)
+  }
+
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <div className="flex items-center justify-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-500"></div>
+        </div>
+      )
+    }
+
+    if (error) {
+      return (
+        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-red-400">
+          {error}
+        </div>
+      )
+    }
+
+    switch (activeTab) {
+      case 'memory':
+        return memories.length === 0 ? (
+          <div className="text-center py-12 text-gray-500">
+            No conversation memory entries found
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {memories.map((memory) => (
+              <div key={memory.id} className="bg-gray-800/50 rounded-lg p-4">
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <span className="text-violet-400 text-sm font-medium">{memory.agent_name}</span>
+                    <span className="text-gray-500 text-xs ml-2">{memory.conversation_id.slice(0, 8)}...</span>
+                  </div>
+                  <span className="text-gray-500 text-xs">{memory.key}</span>
+                </div>
+                <p className="text-gray-300 text-sm line-clamp-3">{memory.value}</p>
+                <p className="text-gray-600 text-xs mt-2">
+                  Updated: {new Date(memory.updated_at).toLocaleString()}
+                </p>
+              </div>
+            ))}
+          </div>
+        )
+
+      case 'loops':
+        return loopConfigs.length === 0 ? (
+          <div className="text-center py-12 text-gray-500">
+            No loop configurations found
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {loopConfigs.map((loop) => (
+              <div key={loop.id} className="bg-gray-800/50 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <span className="text-violet-400 text-sm font-medium">{loop.agent_name}</span>
+                    <span className="text-gray-400 text-xs ml-2 px-2 py-0.5 bg-gray-700 rounded">
+                      {loop.loop_type}
+                    </span>
+                  </div>
+                  <span className={`text-xs px-2 py-1 rounded-full ${loop.enabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-gray-600 text-gray-400'}`}>
+                    {loop.enabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                </div>
+                <JsonDisplay data={loop.config} />
+              </div>
+            ))}
+          </div>
+        )
+
+      case 'incubator':
+        return incubatorIdeas.length === 0 ? (
+          <div className="text-center py-12 text-gray-500">
+            No incubator ideas found
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {incubatorIdeas.map((idea) => (
+              <div key={idea.id} className="bg-gray-800/50 rounded-lg p-4">
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <span className="text-violet-400 text-sm font-medium">{idea.agent_name}</span>
+                    <span className="text-gray-400 text-xs ml-2 px-2 py-0.5 bg-gray-700 rounded">
+                      {idea.work_type}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-amber-400 text-xs">Priority: {idea.priority}</span>
+                    <span className={`text-xs px-2 py-1 rounded-full ${
+                      idea.status === 'pending' ? 'bg-amber-500/20 text-amber-400' :
+                      idea.status === 'processing' ? 'bg-violet-500/20 text-violet-400' :
+                      'bg-gray-600 text-gray-400'
+                    }`}>
+                      {idea.status}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-gray-300 text-sm">{idea.description}</p>
+              </div>
+            ))}
+          </div>
+        )
+
+      case 'queue':
+        return todos.length === 0 ? (
+          <div className="text-center py-12 text-gray-500">
+            No pending todos in queue
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {todos.map((todo) => (
+              <div key={todo.id} className="bg-gray-800/50 rounded-lg p-4">
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <span className="text-violet-400 text-sm font-medium">{todo.agent_name}</span>
+                    <span className="text-gray-500 text-xs ml-2">Priority: {todo.priority}</span>
+                  </div>
+                  {todo.due_date && (
+                    <span className="text-gray-500 text-xs">
+                      Due: {new Date(todo.due_date).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
+                <p className="text-gray-300 text-sm">{todo.task}</p>
+                <p className="text-gray-600 text-xs mt-2">
+                  Created: {new Date(todo.created_at).toLocaleString()}
+                </p>
+              </div>
+            ))}
+          </div>
+        )
+    }
+  }
+
   return (
     <div>
       <div className="mb-6">
-        <h2 className="text-xl font-semibold text-white mb-1">Memory</h2>
-        <p className="text-sm" style={{ color: '#64748b' }}>
-          Persistent agent memory and context store
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-white mb-1">Memory</h2>
+            <p className="text-sm text-gray-500">
+              Persistent agent memory and context store
+            </p>
+          </div>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-gray-300 text-sm transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
-      <div className="rounded-xl p-12 flex flex-col items-center justify-center text-center"
-        style={{ background: '#0d0e14', border: '1px dashed #1e2030' }}>
-        <div className="w-12 h-12 rounded-full mb-4 flex items-center justify-center"
-          style={{ background: 'rgba(139,92,246,0.1)' }}>
-          <svg className="w-6 h-6" style={{ color: '#8b5cf6' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-              d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 5.625c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
-          </svg>
-        </div>
-        <p className="text-sm font-medium text-slate-300 mb-1">Memory store empty</p>
-        <p className="text-xs" style={{ color: '#475569' }}>
-          Agent memory entries from Supabase will be displayed here.
-        </p>
+      {/* Tabs */}
+      <div className="flex gap-1 mb-6 bg-gray-800/30 p-1 rounded-lg w-fit">
+        {tabs.map((tab) => {
+          const Icon = tab.icon
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === tab.id
+                  ? 'bg-violet-600 text-white'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Content */}
+      <div className="bg-gray-900/50 rounded-xl p-6 border border-gray-800">
+        {renderContent()}
       </div>
     </div>
   )

@@ -40,7 +40,7 @@ interface Agent {
 
 interface PipelineRun {
   id: string
-  pipeline_name: string
+  project_name: string
   client_name: string | null
   status: 'running' | 'blocked' | 'completed' | 'failed'
   created_at: string
@@ -59,9 +59,9 @@ interface StagedAction {
 interface AgentLog {
   id: string
   agent_name: string
-  task: string
+  task_description: string
   status: 'completed' | 'failed' | 'blocked' | 'running'
-  pipeline_name: string | null
+  project_name: string | null
   started_at: string
   completed_at: string | null
 }
@@ -150,7 +150,7 @@ function PipelineRow({ pipeline }: { pipeline: PipelineRun }) {
   return (
     <div className="bg-gray-800/50 rounded-lg p-3 flex items-center gap-4">
       <div className="flex-1 min-w-0">
-        <p className="text-white font-medium truncate">{pipeline.pipeline_name}</p>
+        <p className="text-white font-medium truncate">{pipeline.project_name}</p>
         <p className="text-gray-500 text-xs truncate">{pipeline.client_name || 'No client'}</p>
       </div>
       <span
@@ -216,7 +216,7 @@ function ActivityLogRow({ log }: { log: AgentLog }) {
   return (
     <tr className="border-b border-gray-800">
       <td className="py-3 px-4 text-gray-300 text-sm">{log.agent_name}</td>
-      <td className="py-3 px-4 text-gray-400 text-sm truncate max-w-xs">{log.task}</td>
+      <td className="py-3 px-4 text-gray-400 text-sm truncate max-w-xs">{log.task_description}</td>
       <td className="py-3 px-4">
         <div className="flex items-center gap-2">
           {log.status === 'running' && (
@@ -228,7 +228,7 @@ function ActivityLogRow({ log }: { log: AgentLog }) {
           </span>
         </div>
       </td>
-      <td className="py-3 px-4 text-gray-500 text-sm">{log.pipeline_name || '-'}</td>
+      <td className="py-3 px-4 text-gray-500 text-sm">{log.project_name || '-'}</td>
       <td className="py-3 px-4 text-gray-400 text-sm">{duration}</td>
     </tr>
   )
@@ -254,7 +254,7 @@ export default function Overview() {
       if (isInitialLoad) setLoading(true)
 
       // Fetch stats
-      const [activePipelinesRes, pendingApprovalsRes, agentsActiveRes, revenueRes] =
+      const [activePipelinesRes, pendingApprovalsRes, agentsActiveRes] =
         await Promise.all([
           supabase
             .from('pipeline_runs')
@@ -268,14 +268,14 @@ export default function Overview() {
             .from('agent_registry')
             .select('id', { count: 'exact', head: true })
             .eq('status', 'active'),
-          supabase.rpc('get_revenue_this_month'),
+          // RPC removed - function doesn't exist,
         ])
 
       setStats({
         activePipelines: activePipelinesRes.count || 0,
         pendingApprovals: pendingApprovalsRes.count || 0,
         agentsActive: agentsActiveRes.count || 0,
-        revenueThisMonth: revenueRes.data || 0,
+        revenueThisMonth: 0 // RPC removed,
       })
 
       // Fetch agents
@@ -554,3 +554,6 @@ export default function Overview() {
     </div>
   )
 }
+
+
+
