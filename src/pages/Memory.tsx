@@ -17,30 +17,32 @@ const tabs: Tab[] = [
   { id: 'queue', label: 'Idle Work Queue', icon: ListTodo },
 ]
 
+// Correct interfaces matching actual Supabase schema
 interface ConversationMemory {
   id: string
-  agent_name: string
-  conversation_id: string
-  key: string
-  value: string
+  memory_type: string
+  summary: string
+  source_quote?: string
+  applies_to?: string
+  client_name?: string
+  is_active: boolean
+  expires_at?: string
   created_at: string
-  updated_at: string
 }
 
 interface LoopConfig {
   id: string
-  agent_name: string
-  loop_type: string
-  config: Record<string, unknown>
   enabled: boolean
-  created_at: string
+  mode: string
+  max_concurrent: number
+  updated_at: string
 }
 
 interface IdleWork {
   id: string
-  agent_name: string
-  work_type: string
-  description: string
+  agent_name?: string
+  work_type?: string
+  description?: string
   priority: number
   status: string
   created_at: string
@@ -48,29 +50,19 @@ interface IdleWork {
 
 interface Todo {
   id: string
-  agent_name: string
   task: string
-  status: string
+  assignee?: string
   priority: number
+  status: string
+  due_date?: string
   created_at: string
-  due_date: string | null
-}
-
-function JsonDisplay({ data }: { data: unknown }) {
-  return (
-    <pre className="text-xs text-gray-300 bg-gray-900/50 p-2 rounded overflow-auto max-h-32">
-      {JSON.stringify(data, null, 2)}
-    </pre>
-  )
 }
 
 export default function Memory() {
   const [activeTab, setActiveTab] = useState<TabId>('memory')
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
-
-  // Data states
+  const [error, setError] = useState<string | null>(null)
   const [memories, setMemories] = useState<ConversationMemory[]>([])
   const [loopConfigs, setLoopConfigs] = useState<LoopConfig[]>([])
   const [incubatorIdeas, setIncubatorIdeas] = useState<IdleWork[]>([])
@@ -78,7 +70,6 @@ export default function Memory() {
 
   const fetchData = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
-    else setLoading(true)
     setError(null)
 
     try {
@@ -86,7 +77,8 @@ export default function Memory() {
         const { data, error: fetchError } = await supabase
           .from('conversation_memory')
           .select('*')
-          .order('updated_at', { ascending: false })
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
           .limit(50)
         if (fetchError) throw fetchError
         setMemories(data || [])
@@ -94,7 +86,7 @@ export default function Memory() {
         const { data, error: fetchError } = await supabase
           .from('loop_config')
           .select('*')
-          .order('agent_name', { ascending: true })
+          .limit(10)
         if (fetchError) throw fetchError
         setLoopConfigs(data || [])
       } else if (activeTab === 'incubator') {
@@ -161,14 +153,19 @@ export default function Memory() {
               <div key={memory.id} className="bg-gray-800/50 rounded-lg p-4">
                 <div className="flex items-start justify-between mb-2">
                   <div>
-                    <span className="text-violet-400 text-sm font-medium">{memory.agent_name}</span>
-                    <span className="text-gray-500 text-xs ml-2">{memory.conversation_id.slice(0, 8)}...</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${memory.is_active ? 'bg-emerald-500/20 text-emerald-400' : 'bg-gray-600 text-gray-400'}`}>
+                      {memory.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                    <span className="text-violet-400 text-sm font-medium ml-2">{memory.memory_type}</span>
                   </div>
-                  <span className="text-gray-500 text-xs">{memory.key}</span>
+                  <span className="text-gray-500 text-xs">{memory.applies_to || 'general'}</span>
                 </div>
-                <p className="text-gray-300 text-sm line-clamp-3">{memory.value}</p>
+                <p className="text-gray-300 text-sm">{memory.summary}</p>
+                {memory.client_name && (
+                  <p className="text-gray-500 text-xs mt-1">Client: {memory.client_name}</p>
+                )}
                 <p className="text-gray-600 text-xs mt-2">
-                  Updated: {new Date(memory.updated_at).toLocaleString()}
+                  Created: {new Date(memory.created_at).toLocaleString()}
                 </p>
               </div>
             ))}
@@ -186,16 +183,18 @@ export default function Memory() {
               <div key={loop.id} className="bg-gray-800/50 rounded-lg p-4">
                 <div className="flex items-center justify-between mb-2">
                   <div>
-                    <span className="text-violet-400 text-sm font-medium">{loop.agent_name}</span>
-                    <span className="text-gray-400 text-xs ml-2 px-2 py-0.5 bg-gray-700 rounded">
-                      {loop.loop_type}
+                    <span className="text-gray-400 text-xs px-2 py-0.5 bg-gray-700 rounded">
+                      {loop.mode}
                     </span>
+                    <span className="text-gray-500 text-xs ml-2">max concurrent: {loop.max_concurrent}</span>
                   </div>
                   <span className={`text-xs px-2 py-1 rounded-full ${loop.enabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-gray-600 text-gray-400'}`}>
                     {loop.enabled ? 'Enabled' : 'Disabled'}
                   </span>
                 </div>
-                <JsonDisplay data={loop.config} />
+                <p className="text-gray-500 text-xs mt-2">
+                  Updated: {new Date(loop.updated_at).toLocaleString()}
+                </p>
               </div>
             ))}
           </div>
@@ -212,9 +211,9 @@ export default function Memory() {
               <div key={idea.id} className="bg-gray-800/50 rounded-lg p-4">
                 <div className="flex items-start justify-between mb-2">
                   <div>
-                    <span className="text-violet-400 text-sm font-medium">{idea.agent_name}</span>
+                    <span className="text-violet-400 text-sm font-medium">{idea.agent_name || 'Unknown'}</span>
                     <span className="text-gray-400 text-xs ml-2 px-2 py-0.5 bg-gray-700 rounded">
-                      {idea.work_type}
+                      {idea.work_type || 'N/A'}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -228,7 +227,7 @@ export default function Memory() {
                     </span>
                   </div>
                 </div>
-                <p className="text-gray-300 text-sm">{idea.description}</p>
+                <p className="text-gray-300 text-sm">{idea.description || 'No description'}</p>
               </div>
             ))}
           </div>
@@ -245,7 +244,7 @@ export default function Memory() {
               <div key={todo.id} className="bg-gray-800/50 rounded-lg p-4">
                 <div className="flex items-start justify-between mb-2">
                   <div>
-                    <span className="text-violet-400 text-sm font-medium">{todo.agent_name}</span>
+                    <span className="text-violet-400 text-sm font-medium">{todo.assignee || 'Unassigned'}</span>
                     <span className="text-gray-500 text-xs ml-2">Priority: {todo.priority}</span>
                   </div>
                   {todo.due_date && (
@@ -296,8 +295,8 @@ export default function Memory() {
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                 activeTab === tab.id
-                  ? 'bg-violet-600 text-white'
-                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
+                  ? 'bg-violet-500/20 text-violet-400'
+                  : 'text-gray-400 hover:text-gray-300 hover:bg-gray-700/50'
               }`}
             >
               <Icon className="w-4 h-4" />
@@ -308,9 +307,7 @@ export default function Memory() {
       </div>
 
       {/* Content */}
-      <div className="bg-gray-900/50 rounded-xl p-6 border border-gray-800">
-        {renderContent()}
-      </div>
+      {renderContent()}
     </div>
   )
 }
