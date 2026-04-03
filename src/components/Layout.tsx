@@ -1,6 +1,8 @@
+import { useState, useEffect } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Header from './Header'
+import CommandBar from './CommandBar'
 
 const pageTitles: Record<string, string> = {
   '/': 'Overview',
@@ -9,11 +11,26 @@ const pageTitles: Record<string, string> = {
   '/staged-actions': 'Staged Actions',
   '/memory': 'Memory',
   '/clients': 'Clients',
+  '/analytics': 'Analytics',
+  '/automation': 'Automation',
 }
 
 export default function Layout() {
   const location = useLocation()
   const title = pageTitles[location.pathname] ?? 'Dashboard'
+  const [commandBarOpen, setCommandBarOpen] = useState(false)
+
+  // Global keyboard shortcut for CommandBar
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        setCommandBarOpen(true)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   return (
     <div className="flex h-screen w-full overflow-hidden" style={{ background: '#0a0b0f' }}>
@@ -24,6 +41,7 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+      <CommandBar isOpen={commandBarOpen} onClose={() => setCommandBarOpen(false)} />
     </div>
   )
 }

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useRealtime } from '../hooks/useRealtime'
+import QuickActions from '../components/QuickActions'
 
 // Types
 interface StatCards {
@@ -426,6 +427,15 @@ export default function Overview() {
           </>
         )}
       </div>
+
+      {/* SECTION 1.5: Quick Actions */}
+      <QuickActions
+        pendingApprovals={stats.pendingApprovals}
+        onApproveAll={() => {
+          setStats(prev => ({ ...prev, pendingApprovals: 0 }))
+          setStagedActions([])
+        }}
+      />
 
       {/* SECTION 2: Agent Status Grid */}
       <div>
