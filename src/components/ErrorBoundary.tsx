@@ -1,53 +1,139 @@
-import { Component, type ReactNode } from 'react'
+import { Component, type ErrorInfo, type ReactNode } from 'react'
 
 interface Props {
   children: ReactNode
+  fallback?: ReactNode
 }
 
 interface State {
   hasError: boolean
   error: Error | null
-  errorInfo: { componentStack: string } | null
+  errorInfo: ErrorInfo | null
 }
 
-class ErrorBoundary extends Component<Props, State> {
-  state: State = {
-    hasError: false,
-    error: null,
-    errorInfo: null
+export default class ErrorBoundary extends Component<Props, State> {
+  constructor(props: Props) {
+    super(props)
+    this.state = {
+      hasError: false,
+      error: null,
+      errorInfo: null,
+    }
   }
 
   static getDerivedStateFromError(error: Error): Partial<State> {
     return { hasError: true, error }
   }
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('ErrorBoundary caught:', error, errorInfo)
-    this.setState({ errorInfo: { componentStack: errorInfo.componentStack || '' } })
+  componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
+    console.error('Error caught by boundary:', error, errorInfo)
+    this.setState({ errorInfo })
   }
 
-  render() {
+  handleRetry = (): void => {
+    this.setState({ hasError: false, error: null, errorInfo: null })
+  }
+
+  render(): ReactNode {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-          <div className="bg-gray-800 rounded-xl p-6 max-w-lg">
-            <h2 className="text-xl font-bold text-white mb-4">Something went wrong</h2>
-            <div className="bg-gray-900 p-4 rounded-lg mb-4 overflow-auto">
-              <pre className="text-red-400 text-sm whitespace-pre-wrap">{this.state.error?.toString()}</pre>
-              <pre className="text-gray-500 text-xs mt-2 whitespace-pre-wrap">{this.state.errorInfo?.componentStack}</pre>
-            </div>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors"
+        this.props.fallback || (
+          <div
+            style={{
+              minHeight: '100vh',
+              background: '#0a0b0f',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '1rem',
+            }}
+          >
+            <div
+              style={{
+                background: '#13141a',
+                border: '1px solid #dc2626',
+                borderRadius: '0.75rem',
+                padding: '2rem',
+                maxWidth: '32rem',
+                width: '100%',
+              }}
             >
-              Refresh Page
-            </button>
+              <h1
+                style={{
+                  fontSize: '1.5rem',
+                  fontWeight: 'bold',
+                  color: '#f87171',
+                  marginBottom: '1rem',
+                }}
+              >
+                Something went wrong
+              </h1>
+              <p style={{ color: '#94a3b8', marginBottom: '1rem' }}>
+                An error occurred while rendering this page. This is likely a
+                temporary issue.
+              </p>
+              {this.state.error && (
+                <pre
+                  style={{
+                    background: '#0d0e14',
+                    padding: '1rem',
+                    borderRadius: '0.5rem',
+                    fontSize: '0.875rem',
+                    color: '#94a3b8',
+                    overflow: 'auto',
+                    maxHeight: '12rem',
+                    marginBottom: '1.5rem',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  {this.state.error.message}
+                  {this.state.errorInfo?.componentStack && (
+                    <>
+                      {'\n\nComponent stack:\n'}
+                      {this.state.errorInfo.componentStack}
+                    </>
+                  )}
+                </pre>
+              )}
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button
+                  onClick={this.handleRetry}
+                  style={{
+                    flex: 1,
+                    background: '#8b5cf6',
+                    color: 'white',
+                    fontWeight: 500,
+                    padding: '0.75rem 1rem',
+                    borderRadius: '0.5rem',
+                    border: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Try Again
+                </button>
+                <button
+                  onClick={() => window.location.reload()}
+                  style={{
+                    flex: 1,
+                    background: 'transparent',
+                    color: '#94a3b8',
+                    fontWeight: 500,
+                    padding: '0.75rem 1rem',
+                    borderRadius: '0.5rem',
+                    border: '1px solid #374151',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Refresh Page
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
+        )
       )
     }
+
     return this.props.children
   }
 }
-
-export default ErrorBoundary

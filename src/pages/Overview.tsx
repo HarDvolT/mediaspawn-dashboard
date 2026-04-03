@@ -208,7 +208,7 @@ function ActivityLogRow({ log }: { log: AgentLog }) {
     blocked: { color: 'text-amber-400', bg: 'bg-amber-500/20', icon: AlertTriangle },
     running: { color: 'text-violet-400', bg: 'bg-violet-500/20', icon: Activity },
   }
-  const config = statusConfig[log.status]
+  const config = statusConfig[log.status] || statusConfig.completed // fallback for unknown status
   const duration = log.completed_at
     ? formatDistanceToNow(new Date(log.started_at), { addSuffix: false })
     : 'In progress'

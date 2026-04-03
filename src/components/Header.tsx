@@ -8,7 +8,7 @@ export default function Header({ title }: { title: string }) {
   useEffect(() => {
     async function checkConnection() {
       try {
-        const { error } = await supabase.from('agents').select('id').limit(1)
+        const { error } = await supabase.from('agent_registry').select('id').limit(1)
         setConnected(!error)
       } catch {
         setConnected(false)
