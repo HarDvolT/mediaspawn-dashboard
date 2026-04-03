@@ -302,7 +302,7 @@ export default function Overview() {
         .from('staged_actions')
         .select('*')
         .eq('status', 'pending')
-        .order('started_at', { ascending: true })
+      .order('created_at', { ascending: true })
         .limit(5)
       if (actionsError) throw actionsError
       setStagedActions(actionsData || [])
